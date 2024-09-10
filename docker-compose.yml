@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  db:
+    container_name: database
+    hostname: database
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    ports:
+      - "5432:5432"
+    restart: always
+
+  app:
+    container_name: habr_parser_app
+    build: .
+    environment:
+      DATABASE_HOST: database
+    command: /bin/sh -c 'python manage.py migrate && python manage.py collectstatic --noinput && (python manage.py createsuperuser --noinput || true) && python manage.py init_db_data && gunicorn --workers=2 -b 0.0.0.0:8000 --access-logfile - --error-logfile - --access-logformat "%(h)s %(t)s \"%(r)s\" %(s)s %(b)s \"%(a)s\" %(L)s" habr_parser_app.wsgi'
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+    networks:
+      - app-network
+    ports:
+      - "8000:8000"
+    restart: always
+
+  scheduler:
+    container_name: habr_parser_scheduler
+    build:
+      context: .
+      dockerfile: Dockerfile_scheduler
+    environment:
+      DATABASE_HOST: database
+    command: /bin/sh -c 'python manage.py migrate && python scheduler.py'
+    depends_on:
+      - db
+    networks:
+      - app-network
+    restart: always
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge
